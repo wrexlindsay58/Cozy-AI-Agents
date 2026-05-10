@@ -1,0 +1,31 @@
+from sqlalchemy import Column, String, DateTime, create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+import datetime
+from src.config import DB_PATH
+
+Base = declarative_base()
+
+class ProcessedEmail(Base):
+    __tablename__ = 'processed_emails'
+    email_id = Column(String, primary_key=True)
+    processed_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+engine = create_engine(f'sqlite:///{DB_PATH}')
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def init_db():
+    Base.metadata.create_all(bind=engine)
+
+def is_email_processed(email_id: str) -> bool:
+    session = SessionLocal()
+    exists = session.query(ProcessedEmail).filter(ProcessedEmail.email_id == email_id).first() is not None
+    session.close()
+    return exists
+
+def mark_email_processed(email_id: str):
+    session = SessionLocal()
+    processed_email = ProcessedEmail(email_id=email_id)
+    session.merge(processed_email)
+    session.commit()
+    session.close()
