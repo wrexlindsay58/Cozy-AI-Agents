@@ -49,11 +49,6 @@ class Agents:
             logger.error(f"Error in triage_email: {e}")
             return {"category": "FYI", "reason": "Error in processing"}
 
-    def extract_expense_details(self, email_content):
-        """Deprecated — use AP Agent via Bill.com instead."""
-        logger.warning("extract_expense_details is deprecated. Use /finance/approvals endpoint.")
-        return {"vendor": "Unknown", "amount": 0, "date": "1970-01-01", "tax": 0, "currency": "USD"}
-
     def draft_reply(self, email_content, context=""):
         prompt = f"""
         Draft a professional reply to the following email.

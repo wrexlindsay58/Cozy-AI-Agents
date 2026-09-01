@@ -19,6 +19,12 @@ An autonomous multi-agent finance system for home services / home improvement co
 
 - **AR Agent**: AR aging, overdue tracking, payment matching, collections drafts, lien rights alerts
 - **Progress Billing Agent**: Job setup, deposit/milestone/final/retainage invoicing, billing-behind alerts
+- **AP Agent**: Bill.com bill intake, Grok-powered extraction, compliance checks, payment proposals
+- **Subcontractor Compliance Agent**: COI tracking, W-9 verification, blocks non-compliant sub payments
+
+### Planned Agents
+
+Commission, Payroll (BambooHR), Job Costing, Profitability, Change Order, Cash Flow
 
 ## Architecture
 
@@ -27,7 +33,7 @@ An autonomous multi-agent finance system for home services / home improvement co
 - **Ollama** (optional): Open-source local fallback (Llama, Mistral, etc.)
 - **Embeddings**: Local sentence-transformers (no API key) for RAG
 - **QuickBooks Online**: System of record (invoices, bills, bank register)
-- **Bill.com**: AP and payment proposals (planned)
+- **Bill.com**: AP bill intake, approval workflows, payment proposals (human approves in Bill.com)
 - **BambooHR**: Payroll and commissions (planned)
 - **Google Chat + Gmail**: Dual-channel approval queue
 - **SQLite**: Approval queue and state tracking
@@ -88,6 +94,14 @@ python -m src.main
 | `/finance/jobs/{id}/invoice/final` | POST | Final invoice (less retainage) |
 | `/finance/jobs/{id}/invoice/retainage` | POST | Retainage release invoice |
 | `/finance/jobs/alerts` | GET | Jobs where billing is behind completion |
+| `/finance/ap/summary` | GET | AP summary (Bill.com + QBO) |
+| `/finance/ap/bills` | POST | Create vendor bill |
+| `/finance/ap/bills/extract` | POST | Extract bill data from text via Grok |
+| `/finance/ap/payments/propose` | POST | Propose payment batch for approval |
+| `/finance/ap/sync-status` | GET | Bill.com ↔ QBO sync check |
+| `/finance/compliance/dashboard` | GET | Subcontractor compliance overview |
+| `/finance/compliance/vendors` | POST/GET | Register/list vendors |
+| `/finance/compliance/expiring` | GET | COIs expiring within N days |
 | `/chat/webhook` | POST | Google Chat CARD_CLICKED handler |
 
 ## Critical Guardrails

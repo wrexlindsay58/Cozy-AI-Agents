@@ -14,6 +14,8 @@ from src.agents.approval_gateway_agent import ApprovalGatewayAgent
 from src.agents.controller_agent import ControllerAgent
 from src.agents.ar_agent import ARAgent
 from src.agents.progress_billing_agent import ProgressBillingAgent
+from src.agents.ap_agent import APAgent
+from src.agents.sub_compliance_agent import SubComplianceAgent
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,8 @@ approval_gateway = ApprovalGatewayAgent()
 controller = ControllerAgent()
 ar_agent = ARAgent()
 progress_billing = ProgressBillingAgent()
+ap_agent = APAgent()
+sub_compliance = SubComplianceAgent()
 
 
 class VoiceNote(BaseModel):
@@ -54,6 +58,32 @@ class CreateJobRequest(BaseModel):
 
 class UpdateCompletionRequest(BaseModel):
     completion_percent: float
+
+
+class CreateBillRequest(BaseModel):
+    vendor_name: str
+    amount: float
+    invoice_number: str
+    invoice_date: str
+    due_date: Optional[str] = None
+    description: str = ""
+    job_reference: Optional[str] = None
+    is_subcontractor: bool = False
+
+
+class RegisterVendorRequest(BaseModel):
+    vendor_name: str
+    is_subcontractor: bool = False
+    billcom_vendor_id: Optional[str] = None
+    coi_expiration: Optional[str] = None
+    w9_on_file: bool = False
+    lien_waiver_required: bool = True
+    notes: Optional[str] = None
+
+
+class UpdateCOIRequest(BaseModel):
+    coi_expiration: str
+    document_url: Optional[str] = None
 
 
 @app.on_event("startup")
@@ -238,6 +268,84 @@ def invoice_final(job_id: str):
 @app.post("/finance/jobs/{job_id}/invoice/retainage")
 def invoice_retainage(job_id: str):
     return progress_billing.invoice_retainage(job_id)
+
+
+# --- AP Agent Endpoints ---
+
+@app.get("/finance/ap/summary")
+def ap_summary():
+    return ap_agent.get_ap_summary()
+
+
+@app.get("/finance/ap/bills/unpaid")
+def ap_unpaid_bills():
+    return ap_agent.list_unpaid_bills()
+
+
+@app.get("/finance/ap/sync-status")
+def ap_sync_status():
+    return ap_agent.check_sync_status()
+
+
+@app.post("/finance/ap/bills")
+def ap_create_bill(request: CreateBillRequest):
+    return ap_agent.create_bill(
+        vendor_name=request.vendor_name,
+        amount=request.amount,
+        invoice_number=request.invoice_number,
+        invoice_date=request.invoice_date,
+        due_date=request.due_date,
+        description=request.description,
+        job_reference=request.job_reference,
+        is_subcontractor=request.is_subcontractor,
+    )
+
+
+@app.post("/finance/ap/bills/extract")
+def ap_extract_bill(text: str):
+    return ap_agent.extract_bill_from_text(text)
+
+
+@app.post("/finance/ap/payments/propose")
+def ap_propose_payment_batch(bill_ids: list[str] = None):
+    return ap_agent.propose_payment_batch(bill_ids)
+
+
+# --- Subcontractor Compliance Endpoints ---
+
+@app.get("/finance/compliance/dashboard")
+def compliance_dashboard():
+    return sub_compliance.get_dashboard()
+
+
+@app.get("/finance/compliance/vendors")
+def compliance_list_vendors(is_subcontractor: bool = None):
+    return sub_compliance.list_vendors(is_subcontractor)
+
+
+@app.post("/finance/compliance/vendors")
+def compliance_register_vendor(request: RegisterVendorRequest):
+    return sub_compliance.register_vendor(**request.model_dump())
+
+
+@app.get("/finance/compliance/vendors/{vendor_name}")
+def compliance_check_vendor(vendor_name: str):
+    return sub_compliance.check_compliance(vendor_name)
+
+
+@app.patch("/finance/compliance/vendors/{vendor_name}/coi")
+def compliance_update_coi(vendor_name: str, request: UpdateCOIRequest):
+    return sub_compliance.update_coi(vendor_name, request.coi_expiration, request.document_url)
+
+
+@app.get("/finance/compliance/expiring")
+def compliance_expiring_coi(within_days: int = 30):
+    return sub_compliance.list_expiring_coi(within_days)
+
+
+@app.get("/finance/compliance/non-compliant")
+def compliance_non_compliant():
+    return sub_compliance.list_non_compliant()
 
 
 if __name__ == "__main__":

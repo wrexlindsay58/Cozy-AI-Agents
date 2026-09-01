@@ -65,3 +65,7 @@ LIEN_RIGHTS_STATE = os.getenv("LIEN_RIGHTS_STATE", "CA")
 # Progress Billing defaults
 DEFAULT_DEPOSIT_PERCENT = float(os.getenv("DEFAULT_DEPOSIT_PERCENT", "40"))
 DEFAULT_RETAINAGE_PERCENT = float(os.getenv("DEFAULT_RETAINAGE_PERCENT", "10"))
+
+# AP approval thresholds
+AP_AUTO_APPROVE_THRESHOLD = float(os.getenv("AP_AUTO_APPROVE_THRESHOLD", "500"))
+AP_MANAGER_THRESHOLD = float(os.getenv("AP_MANAGER_THRESHOLD", "5000"))

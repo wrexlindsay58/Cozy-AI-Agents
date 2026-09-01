@@ -13,6 +13,7 @@ class AgentState(TypedDict):
     calendar_slots: str
     context: str
     confirmation: dict
+    ap_result: dict
 
 agents = None
 
@@ -39,13 +40,18 @@ def spam_node(state: AgentState):
     return {}
 
 def finance_node(state: AgentState):
-    """Route financial emails to the Approval Gateway for review."""
-    from src.agents.approval_gateway_agent import ApprovalGatewayAgent
+    """Route financial emails to the appropriate specialist agent."""
+    from src.agents.ap_agent import APAgent
     email = state['email']
     triage = state['triage']
-    gateway = ApprovalGatewayAgent()
-
     category = triage.get('category', 'BILL')
+
+    if category in ('BILL', 'VENDOR_DOC', 'RECEIPT'):
+        ap = APAgent()
+        return {"ap_result": ap.process_bill_from_email(email)}
+
+    from src.agents.approval_gateway_agent import ApprovalGatewayAgent
+    gateway = ApprovalGatewayAgent()
     gateway.submit(
         approval_type=category.lower(),
         title=f"{email['subject']} — from {email['sender']}",
