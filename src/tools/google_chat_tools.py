@@ -112,3 +112,47 @@ def update_approval_card(proposal: dict, resolution_message: str):
         name=proposal["chat_message_name"],
         body=card,
     ).execute()
+
+
+def send_text_message(text: str) -> str | None:
+    """Send a plain-text message to the configured Google Chat space."""
+    if not GOOGLE_CHAT_SPACE:
+        logger.warning("GOOGLE_CHAT_SPACE not configured — skipping Chat message")
+        return None
+
+    service = get_chat_service()
+    result = service.spaces().messages().create(
+        parent=GOOGLE_CHAT_SPACE,
+        body={"text": text},
+    ).execute()
+    return result.get("name")
+
+
+def send_dashboard_card(title: str, sections: list[dict]) -> str | None:
+    """Send a formatted dashboard card to Google Chat."""
+    if not GOOGLE_CHAT_SPACE:
+        logger.warning("GOOGLE_CHAT_SPACE not configured — skipping dashboard")
+        return None
+
+    widgets = []
+    for section in sections:
+        widgets.append({"textParagraph": {"text": section.get("text", "")}})
+        if section.get("divider"):
+            widgets.append({"divider": {}})
+
+    card = {
+        "cardsV2": [{
+            "cardId": title.replace(" ", "-").lower()[:50],
+            "card": {
+                "header": {"title": title, "subtitle": "Finance Agent Dashboard"},
+                "sections": [{"widgets": widgets}],
+            },
+        }],
+    }
+
+    service = get_chat_service()
+    result = service.spaces().messages().create(
+        parent=GOOGLE_CHAT_SPACE,
+        body=card,
+    ).execute()
+    return result.get("name")

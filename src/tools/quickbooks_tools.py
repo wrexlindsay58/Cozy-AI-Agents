@@ -175,3 +175,70 @@ def get_payments(since_date: str = None) -> list[dict]:
 def get_items() -> list[dict]:
     return query("SELECT * FROM Item WHERE Type = 'Service' MAXRESULTS 100")
 
+
+def get_report(report_name: str, params: dict = None) -> dict | None:
+    """Fetch a QBO report (ProfitAndLoss, BalanceSheet, CashFlow, etc.)."""
+    result = _qbo_request("GET", f"reports/{report_name}", params=params or {})
+    return result
+
+
+def get_profit_and_loss(start_date: str, end_date: str) -> dict | None:
+    return get_report("ProfitAndLoss", {
+        "start_date": start_date,
+        "end_date": end_date,
+        "accounting_method": "Accrual",
+    })
+
+
+def get_balance_sheet(as_of_date: str) -> dict | None:
+    return get_report("BalanceSheet", {"date": as_of_date})
+
+
+def get_cash_flow_statement(start_date: str, end_date: str) -> dict | None:
+    return get_report("CashFlow", {
+        "start_date": start_date,
+        "end_date": end_date,
+    })
+
+
+def get_bank_account_balances() -> list[dict]:
+    accounts = query(
+        "SELECT * FROM Account WHERE AccountType = 'Bank' AND Active = true MAXRESULTS 50"
+    )
+    return [
+        {
+            "id": a.get("Id"),
+            "name": a.get("Name"),
+            "balance": float(a.get("CurrentBalance", 0) or 0),
+        }
+        for a in accounts
+    ]
+
+
+def get_total_cash_balance() -> float:
+    balances = get_bank_account_balances()
+    if balances:
+        return sum(b["balance"] for b in balances)
+    return 0.0
+
+
+def _parse_report_total(report: dict, section_name: str) -> float | None:
+    """Extract a summary total from a QBO report response."""
+    if not report:
+        return None
+    rows = report.get("Rows", {}).get("Row", [])
+    if not isinstance(rows, list):
+        rows = [rows] if rows else []
+
+    for row in rows:
+        header = row.get("Header", {})
+        if header.get("ColData", [{}])[0].get("value", "").lower() == section_name.lower():
+            summary = row.get("Summary", {})
+            cols = summary.get("ColData", [])
+            if len(cols) >= 2:
+                try:
+                    return float(cols[1].get("value", "0").replace(",", ""))
+                except (ValueError, TypeError):
+                    return None
+    return None
+

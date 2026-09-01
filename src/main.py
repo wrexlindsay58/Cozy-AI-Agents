@@ -20,6 +20,8 @@ from src.agents.job_costing_agent import JobCostingAgent
 from src.agents.change_order_agent import ChangeOrderAgent
 from src.agents.commission_agent import CommissionAgent
 from src.agents.payroll_agent import PayrollAgent
+from src.agents.profitability_agent import ProfitabilityAgent
+from src.agents.cash_flow_agent import CashFlowAgent
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,8 @@ job_costing = JobCostingAgent()
 change_order = ChangeOrderAgent()
 commission = CommissionAgent()
 payroll = PayrollAgent()
+profitability = ProfitabilityAgent()
+cash_flow = CashFlowAgent()
 
 
 class VoiceNote(BaseModel):
@@ -138,6 +142,18 @@ class ProposePayoutRequest(BaseModel):
 
 class ProposePayrollRequest(BaseModel):
     period: Optional[str] = None
+
+
+class JobAffordabilityRequest(BaseModel):
+    contract_amount: float
+    estimated_costs: float
+    deposit_percent: Optional[float] = 40
+    duration_weeks: Optional[int] = 8
+
+
+class CashScenarioRequest(BaseModel):
+    accelerate_ar_days: Optional[int] = 0
+    defer_ap_days: Optional[int] = 0
 
 
 @app.on_event("startup")
@@ -608,6 +624,93 @@ def allocate_payroll_labor(period: str):
 @app.get("/finance/payroll/reconcile")
 def reconcile_payroll(period: str = None):
     return payroll.reconcile_payroll_jes(period)
+
+
+# --- Profitability Agent Endpoints ---
+
+@app.get("/finance/profitability/pnl")
+def company_pnl(start_date: str = None, end_date: str = None):
+    return profitability.get_company_pnl(start_date, end_date)
+
+
+@app.get("/finance/profitability/balance-sheet")
+def balance_sheet(as_of_date: str = None):
+    return profitability.get_balance_sheet(as_of_date)
+
+
+@app.get("/finance/profitability/margins-by-type")
+def margins_by_job_type():
+    return profitability.get_margins_by_job_type()
+
+
+@app.get("/finance/profitability/rep-rankings")
+def rep_rankings():
+    return profitability.get_rep_rankings()
+
+
+@app.get("/finance/profitability/seasonal-trends")
+def seasonal_trends(months: int = 12):
+    return profitability.get_seasonal_trends(months)
+
+
+@app.get("/finance/profitability/variance")
+def estimate_to_actual_variance():
+    return profitability.get_estimate_to_actual_variance()
+
+
+@app.get("/finance/profitability/monthly-package")
+def monthly_financial_package(period: str = None):
+    return profitability.get_monthly_package(period)
+
+
+@app.post("/finance/profitability/dashboard")
+def push_profitability_dashboard(frequency: str = "daily"):
+    return profitability.push_dashboard_to_chat(frequency)
+
+
+# --- Cash Flow Agent Endpoints ---
+
+@app.get("/finance/cash-flow/summary")
+def cash_flow_summary():
+    return cash_flow.get_summary()
+
+
+@app.get("/finance/cash-flow/position")
+def cash_position():
+    return cash_flow.get_current_cash_position()
+
+
+@app.get("/finance/cash-flow/forecast")
+def cash_flow_forecast():
+    return cash_flow.get_13_week_forecast()
+
+
+@app.post("/finance/cash-flow/affordability")
+def analyze_affordability(request: JobAffordabilityRequest):
+    return cash_flow.analyze_job_affordability(**request.model_dump())
+
+
+@app.get("/finance/cash-flow/affordability/{job_id}")
+def analyze_job_affordability(job_id: str):
+    return cash_flow.analyze_job_affordability_by_id(job_id)
+
+
+@app.get("/finance/cash-flow/seasonal")
+def seasonal_cash_plan():
+    return cash_flow.get_seasonal_plan()
+
+
+@app.post("/finance/cash-flow/scenario")
+def cash_flow_scenario(request: CashScenarioRequest):
+    return cash_flow.model_collection_scenario(
+        accelerate_ar_days=request.accelerate_ar_days,
+        defer_ap_days=request.defer_ap_days,
+    )
+
+
+@app.post("/finance/cash-flow/alert")
+def push_cash_alert():
+    return cash_flow.push_cash_alert_to_chat()
 
 
 if __name__ == "__main__":

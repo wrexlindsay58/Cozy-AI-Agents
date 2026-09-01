@@ -69,9 +69,11 @@ class ControllerAgent:
             {"step": 7, "task": "Reconcile undeposited funds", "status": "pending", "agent": "controller"},
             {"step": 8, "task": "Review job costing allocations", "status": "pending", "agent": "job_costing"},
             {"step": 9, "task": "Review commission accruals and payouts", "status": "pending", "agent": "commission"},
-            {"step": 10, "task": "Generate P&L and balance sheet", "status": "pending", "agent": "profitability"},
-            {"step": 11, "task": "Review 1099-eligible vendors", "status": "pending", "agent": "controller"},
-            {"step": 12, "task": "Close books for period", "status": "pending", "agent": "controller"},
+            {"step": 10, "task": "Post adjusting journal entries", "status": "pending", "agent": "controller"},
+            {"step": 11, "task": "Generate P&L and balance sheet", "status": "pending", "agent": "profitability"},
+            {"step": 12, "task": "Review 13-week cash flow forecast", "status": "pending", "agent": "cash_flow"},
+            {"step": 12, "task": "Review 1099-eligible vendors", "status": "pending", "agent": "controller"},
+            {"step": 13, "task": "Close books for period", "status": "pending", "agent": "controller"},
         ]
 
     def find_data_quality_issues(self) -> list[dict]:
