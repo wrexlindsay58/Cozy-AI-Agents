@@ -1,0 +1,244 @@
+import logging
+import requests
+from src.config import (
+    QUICKBOOKS_CLIENT_ID,
+    QUICKBOOKS_CLIENT_SECRET,
+    QUICKBOOKS_REALM_ID,
+    QUICKBOOKS_REFRESH_TOKEN,
+    QUICKBOOKS_ENVIRONMENT,
+)
+
+logger = logging.getLogger(__name__)
+
+QBO_BASE_URL = (
+    "https://sandbox-quickbooks.api.intuit.com"
+    if QUICKBOOKS_ENVIRONMENT == "sandbox"
+    else "https://quickbooks.api.intuit.com"
+)
+TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
+
+_access_token = None
+
+
+def is_configured() -> bool:
+    return all([QUICKBOOKS_CLIENT_ID, QUICKBOOKS_CLIENT_SECRET, QUICKBOOKS_REFRESH_TOKEN, QUICKBOOKS_REALM_ID])
+
+
+def _get_access_token() -> str | None:
+    global _access_token
+    if not all([QUICKBOOKS_CLIENT_ID, QUICKBOOKS_CLIENT_SECRET, QUICKBOOKS_REFRESH_TOKEN]):
+        logger.warning("QuickBooks credentials not configured")
+        return None
+
+    try:
+        resp = requests.post(TOKEN_URL, data={
+            "grant_type": "refresh_token",
+            "refresh_token": QUICKBOOKS_REFRESH_TOKEN,
+        }, auth=(QUICKBOOKS_CLIENT_ID, QUICKBOOKS_CLIENT_SECRET), timeout=30)
+        resp.raise_for_status()
+        _access_token = resp.json()["access_token"]
+        return _access_token
+    except Exception as e:
+        logger.error(f"Failed to refresh QBO token: {e}")
+        return None
+
+
+def _qbo_request(method: str, endpoint: str, **kwargs) -> dict | None:
+    token = _get_access_token()
+    if not token or not QUICKBOOKS_REALM_ID:
+        return None
+
+    url = f"{QBO_BASE_URL}/v3/company/{QUICKBOOKS_REALM_ID}/{endpoint}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    try:
+        resp = requests.request(method, url, headers=headers, timeout=30, **kwargs)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        logger.error(f"QBO API error ({endpoint}): {e}")
+        return None
+
+
+def get_company_info() -> dict | None:
+    return _qbo_request("GET", "companyinfo/" + (QUICKBOOKS_REALM_ID or ""))
+
+
+def query(sql: str) -> list[dict]:
+    """Run a QBO SQL-like query. E.g. \"SELECT * FROM Invoice WHERE Balance > '0'\" """
+    result = _qbo_request("GET", "query", params={"query": sql, "minorversion": "65"})
+    if not result:
+        return []
+    query_response = result.get("QueryResponse", {})
+    for key in query_response:
+        if key not in ("startPosition", "maxResults", "totalCount"):
+            return query_response[key]
+    return []
+
+
+def get_accounts() -> list[dict]:
+    return query("SELECT * FROM Account MAXRESULTS 1000")
+
+
+def get_open_invoices() -> list[dict]:
+    return query("SELECT * FROM Invoice WHERE Balance > '0' MAXRESULTS 100")
+
+
+def get_unpaid_bills() -> list[dict]:
+    return query("SELECT * FROM Bill WHERE Balance > '0' MAXRESULTS 100")
+
+
+def get_bank_transactions(account_id: str, start_date: str, end_date: str) -> list[dict]:
+    return query(
+        f"SELECT * FROM Purchase WHERE TxnDate >= '{start_date}' "
+        f"AND TxnDate <= '{end_date}' MAXRESULTS 1000"
+    )
+
+
+def get_undeposited_funds() -> list[dict]:
+    return query("SELECT * FROM Payment WHERE UnappliedAmt > '0' MAXRESULTS 100")
+
+
+def create_journal_entry(lines: list[dict], memo: str = "") -> dict | None:
+    """Create a journal entry. Lines: [{\"Amount\": 100, \"DetailType\": \"JournalEntryLineDetail\", ...}]"""
+    body = {
+        "Line": lines,
+        "PrivateNote": memo,
+    }
+    result = _qbo_request("POST", "journalentry", json=body)
+    return result.get("JournalEntry") if result else None
+
+
+def get_customers() -> list[dict]:
+    return query("SELECT * FROM Customer MAXRESULTS 1000")
+
+
+def get_customer_by_name(name: str) -> dict | None:
+    customers = query(f"SELECT * FROM Customer WHERE DisplayName = '{name}' MAXRESULTS 1")
+    return customers[0] if customers else None
+
+
+def get_invoice(invoice_id: str) -> dict | None:
+    result = _qbo_request("GET", f"invoice/{invoice_id}")
+    return result.get("Invoice") if result else None
+
+
+def create_invoice(
+    customer_id: str,
+    line_items: list[dict],
+    due_date: str = None,
+    memo: str = "",
+    doc_number: str = None,
+) -> dict | None:
+    """Create a QBO invoice.
+
+    line_items: [{"description": "...", "amount": 100.0, "item_id": "1"}]
+    """
+    lines = []
+    for i, item in enumerate(line_items, start=1):
+        line = {
+            "LineNum": i,
+            "Amount": item["amount"],
+            "DetailType": "SalesItemLineDetail",
+            "Description": item.get("description", ""),
+            "SalesItemLineDetail": {
+                "ItemRef": {"value": item.get("item_id", "1")},
+                "Qty": 1,
+                "UnitPrice": item["amount"],
+            },
+        }
+        lines.append(line)
+
+    body = {
+        "Line": lines,
+        "CustomerRef": {"value": customer_id},
+        "PrivateNote": memo,
+    }
+    if due_date:
+        body["DueDate"] = due_date
+    if doc_number:
+        body["DocNumber"] = doc_number
+
+    result = _qbo_request("POST", "invoice", json=body)
+    return result.get("Invoice") if result else None
+
+
+def get_payments(since_date: str = None) -> list[dict]:
+    if since_date:
+        return query(f"SELECT * FROM Payment WHERE TxnDate >= '{since_date}' MAXRESULTS 100")
+    return query("SELECT * FROM Payment MAXRESULTS 100")
+
+
+def get_items() -> list[dict]:
+    return query("SELECT * FROM Item WHERE Type = 'Service' MAXRESULTS 100")
+
+
+def get_report(report_name: str, params: dict = None) -> dict | None:
+    """Fetch a QBO report (ProfitAndLoss, BalanceSheet, CashFlow, etc.)."""
+    result = _qbo_request("GET", f"reports/{report_name}", params=params or {})
+    return result
+
+
+def get_profit_and_loss(start_date: str, end_date: str) -> dict | None:
+    return get_report("ProfitAndLoss", {
+        "start_date": start_date,
+        "end_date": end_date,
+        "accounting_method": "Accrual",
+    })
+
+
+def get_balance_sheet(as_of_date: str) -> dict | None:
+    return get_report("BalanceSheet", {"date": as_of_date})
+
+
+def get_cash_flow_statement(start_date: str, end_date: str) -> dict | None:
+    return get_report("CashFlow", {
+        "start_date": start_date,
+        "end_date": end_date,
+    })
+
+
+def get_bank_account_balances() -> list[dict]:
+    accounts = query(
+        "SELECT * FROM Account WHERE AccountType = 'Bank' AND Active = true MAXRESULTS 50"
+    )
+    return [
+        {
+            "id": a.get("Id"),
+            "name": a.get("Name"),
+            "balance": float(a.get("CurrentBalance", 0) or 0),
+        }
+        for a in accounts
+    ]
+
+
+def get_total_cash_balance() -> float:
+    balances = get_bank_account_balances()
+    if balances:
+        return sum(b["balance"] for b in balances)
+    return 0.0
+
+
+def _parse_report_total(report: dict, section_name: str) -> float | None:
+    """Extract a summary total from a QBO report response."""
+    if not report:
+        return None
+    rows = report.get("Rows", {}).get("Row", [])
+    if not isinstance(rows, list):
+        rows = [rows] if rows else []
+
+    for row in rows:
+        header = row.get("Header", {})
+        if header.get("ColData", [{}])[0].get("value", "").lower() == section_name.lower():
+            summary = row.get("Summary", {})
+            cols = summary.get("ColData", [])
+            if len(cols) >= 2:
+                try:
+                    return float(cols[1].get("value", "0").replace(",", ""))
+                except (ValueError, TypeError):
+                    return None
+    return None
+
