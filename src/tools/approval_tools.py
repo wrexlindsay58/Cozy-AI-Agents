@@ -76,6 +76,7 @@ def approve(token: str, approved_by: str, via: str = "web") -> dict:
 
     result = resolve_proposal(token, ApprovalStatus.APPROVED.value, approved_by, via)
     _sync_channels(result)
+    _execute_post_approval_action(result, approved_by)
     return result
 
 
@@ -89,7 +90,38 @@ def reject(token: str, rejected_by: str, via: str = "web") -> dict:
 
     result = resolve_proposal(token, ApprovalStatus.REJECTED.value, rejected_by, via)
     _sync_channels(result)
+    _execute_post_rejection_action(result)
     return result
+
+
+def _execute_post_approval_action(proposal: dict, approved_by: str):
+    """Run downstream actions after an approval is resolved."""
+    if not proposal or proposal.get("status") != ApprovalStatus.APPROVED.value:
+        return
+
+    payload = proposal.get("payload") or {}
+    action = payload.get("action")
+
+    if action == "approve_change_order":
+        co_id = payload.get("change_order_id")
+        if co_id:
+            from src.agents.change_order_agent import ChangeOrderAgent
+            ChangeOrderAgent().approve(co_id, approved_by=approved_by)
+
+
+def _execute_post_rejection_action(proposal: dict):
+    """Run downstream actions after a rejection is resolved."""
+    if not proposal or proposal.get("status") != ApprovalStatus.REJECTED.value:
+        return
+
+    payload = proposal.get("payload") or {}
+    action = payload.get("action")
+
+    if action == "approve_change_order":
+        co_id = payload.get("change_order_id")
+        if co_id:
+            from src.agents.change_order_agent import ChangeOrderAgent
+            ChangeOrderAgent().reject(co_id)
 
 
 def _sync_channels(proposal: dict):

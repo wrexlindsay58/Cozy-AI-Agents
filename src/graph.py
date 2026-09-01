@@ -14,6 +14,7 @@ class AgentState(TypedDict):
     context: str
     confirmation: dict
     ap_result: dict
+    change_order_result: dict
 
 agents = None
 
@@ -49,6 +50,11 @@ def finance_node(state: AgentState):
     if category in ('BILL', 'VENDOR_DOC', 'RECEIPT'):
         ap = APAgent()
         return {"ap_result": ap.process_bill_from_email(email)}
+
+    if category == 'CHANGE_ORDER':
+        from src.agents.change_order_agent import ChangeOrderAgent
+        co = ChangeOrderAgent()
+        return {"change_order_result": co.intake_from_email(email)}
 
     from src.agents.approval_gateway_agent import ApprovalGatewayAgent
     gateway = ApprovalGatewayAgent()
@@ -101,7 +107,7 @@ def router(state: AgentState):
     category = triage.get('category')
     if category == 'SPAM':
         return 'spam'
-    elif category in ('BILL', 'INVOICE', 'VENDOR_DOC', 'RECEIPT'):
+    elif category in ('BILL', 'INVOICE', 'VENDOR_DOC', 'RECEIPT', 'CHANGE_ORDER'):
         return 'finance'
     elif category == 'SCHEDULING' or triage.get('is_scheduling') or triage.get('is_confirmation'):
         return 'scheduling'

@@ -23,12 +23,13 @@ class Agents:
     def triage_email(self, email_content):
         prompt = f"""
         Analyze the following email and classify it into one of these categories:
-        SPAM, FYI, BILL, INVOICE, VENDOR_DOC, ACTION_REQUIRED, SCHEDULING.
+        SPAM, FYI, BILL, INVOICE, VENDOR_DOC, CHANGE_ORDER, ACTION_REQUIRED, SCHEDULING.
 
         Financial categories:
         - BILL: vendor bill or invoice we need to pay
         - INVOICE: customer invoice or payment we are receiving
         - VENDOR_DOC: receipt, statement, or financial document from a vendor
+        - CHANGE_ORDER: scope change, extra work request, or change order from customer/field crew
 
         Return a JSON object with:
         {{

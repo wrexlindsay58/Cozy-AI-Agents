@@ -416,6 +416,11 @@ def add_job_cost(job_id: str, request: AddCostRequest):
 
 # --- Change Order Endpoints ---
 
+@app.post("/finance/change-orders/extract")
+def extract_change_order(text: str, job_id: str = None):
+    return change_order.extract_from_text(text, job_id)
+
+
 @app.get("/finance/change-orders/risks")
 def change_order_risks():
     return change_order.get_risk_report()
