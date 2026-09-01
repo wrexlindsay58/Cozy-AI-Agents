@@ -36,9 +36,9 @@ flowchart TB
     end
 
     subgraph comms [CommunicationAndApproval]
-        Slack[SlackNotifications]
-        EmailDrafts[EmailDraftsOnly]
-        ApprovalQueue[ApprovalQueue]
+        GChat[GoogleChatCards]
+        EmailDrafts[GmailDraftsAndFallback]
+        ApprovalQueue[ApprovalQueue_DB]
     end
 
     Chase -->|"Native QBO bank feed (human connects once)"| QBO
@@ -47,7 +47,8 @@ flowchart TB
     Specialists --> BillAPI
     Specialists --> BambooAPI
     Specialists --> ApprovalQueue
-    ApprovalQueue --> Slack
+    ApprovalQueue --> GChat
+    ApprovalQueue --> EmailDrafts
     Specialists --> EmailDrafts
 
     BillAPI -->|"Payment proposal only"| BillApprove
@@ -105,7 +106,8 @@ flowchart LR
     end
 
     subgraph output [CommsAndApproval]
-        Slack[Slack]
+        GChat[GoogleChat]
+        Gmail[Gmail]
         Approvals[ApprovalQueue]
     end
 
@@ -118,7 +120,8 @@ flowchart LR
     Bill <-->|"2-way sync"| QBO
     Bamboo -->|"Payroll JE sync"| QBO
     Specs --> Approvals
-    Approvals --> Slack
+    Approvals --> GChat
+    Approvals --> Gmail
 ```
 
 ### QuickBooks Online — System of Record
@@ -149,13 +152,50 @@ flowchart LR
 
 **Agent API scope:** Read employee data, time entries, payroll preview. Propose commission amounts for payroll inclusion. **Never** trigger payroll execution.
 
-### Communication Layer
+### Communication and Approval Layer (Google Workspace)
+
+**Recommended: Google Chat as primary approval queue. Gmail as fallback and for external comms.**
+
+Your codebase already integrates Gmail, Google Tasks, and Calendar. Google Chat is the best Slack replacement — it supports interactive Approve/Reject buttons natively. Gmail works too, but with tradeoffs (see comparison below).
 
 | Channel | Use |
 |---|---|
-| **Slack** | Approval requests, exception alerts, daily financial summary, AR aging alerts |
-| **Email (draft only)** | Customer invoices, collections follow-ups, vendor inquiries, homeowner communications |
-| **Approval Queue** | Centralized inbox for all agent proposals requiring human sign-off (commissions, JEs, large bills) |
+| **Google Chat** | Primary approval queue — interactive cards with Approve/Reject buttons, exception alerts, daily financial summary |
+| **Gmail** | Fallback approvals (link to approval page), customer/vendor drafts (never auto-send), AR collections drafts |
+| **Google Tasks** | Supplementary reminders for pending approvals ("3 bills awaiting your review") |
+| **Approval Queue (internal DB)** | System of record for all pending proposals, status, audit trail |
+
+#### Google Chat vs Gmail for Approvals
+
+| | Google Chat | Gmail (ViewAction link) | Gmail (ConfirmAction button) | Gmail (reply-based) |
+|---|---|---|---|---|
+| **Interactive Approve/Reject** | Yes — native card buttons | Yes — opens approval web page | Approve only (one button per email) | Yes — reply "APPROVE abc123" |
+| **Setup complexity** | Medium — Chat app + HTTPS webhook | Low — link in email body | High — Google markup registration required | Low — uses existing Gmail API |
+| **Real-time alerts** | Yes — push to Chat space or DM | No — email inbox | No — email inbox | No — email inbox |
+| **Audit trail** | Webhook logs + internal DB | Internal DB + web page logs | Google POST + internal DB | Gmail thread parsing |
+| **Batch approvals** | Yes — card lists multiple items | Yes — approval page | No — one action per email | Awkward |
+| **Already in your codebase** | No (new integration) | Partially (Gmail tools exist) | Partially | Partially |
+| **Recommendation** | **Primary** | **Fallback** | Skip (overkill) | MVP only |
+
+#### Recommended Approval Flow
+
+```mermaid
+sequenceDiagram
+    participant Agent as APAgent
+    participant Queue as ApprovalQueue_DB
+    participant Chat as GoogleChat
+    participant Human as Approver
+    participant Bill as Bill.com
+
+    Agent->>Queue: Create proposal (bill_id, amount, vendor)
+    Agent->>Chat: Post card with Approve/Reject buttons
+    Human->>Chat: Clicks Approve
+    Chat->>Queue: Webhook updates status
+    Queue->>Bill: Route to Bill.com approval chain
+    Chat->>Human: Confirmation message updated
+```
+
+**Gmail fallback:** If Chat is unavailable or approver prefers email, agent sends a structured email with a secure link to a simple approval page (`Approve` / `Reject` / `View details`). No Google markup registration needed.
 
 ### Approval Layer
 
@@ -163,10 +203,10 @@ flowchart LR
 |---|---|
 | Vendor bills under threshold | Bill.com auto-route to manager |
 | Vendor bills over threshold | Bill.com → owner/CFO chain |
-| Commission payouts | Agent proposes → Approval Queue → Slack → human adds to BambooHR payroll |
+| Commission payouts | Agent proposes → Google Chat card → human adds to BambooHR payroll |
 | Payroll run | BambooHR native approval (agent only pre-validates) |
-| Journal entries / adjustments | Approval Queue → human posts to QBO |
-| Customer credit memos | Approval Queue |
+| Journal entries / adjustments | Google Chat card → human posts to QBO |
+| Customer credit memos | Google Chat card or Gmail link |
 
 ---
 
@@ -267,7 +307,7 @@ Coordinates all compensation disbursement. Separate from Commission Agent (calcu
 - Rep/crew profitability ranking
 - Seasonal trend analysis (home services is highly seasonal)
 - Estimate-to-actual variance reports
-- Dashboard pushed to Slack daily/weekly
+- Dashboard pushed to Google Chat daily/weekly
 - Board-ready monthly financial package
 
 ---
@@ -326,7 +366,7 @@ Home services relies heavily on subs. Non-compliance = liability.
 - Lien waiver collection: conditional at payment, unconditional after clearance
 - 1099 tracking and year-end prep (feeds Controller Agent)
 - Subcontractor W-9 on file verification
-- Compliance dashboard and expiration alerts via Slack
+- Compliance dashboard and expiration alerts via Google Chat
 
 ---
 
@@ -353,7 +393,8 @@ Not a domain specialist — a cross-cutting workflow agent.
 **Capabilities:**
 - Central approval queue for all agent proposals
 - Route to correct approver by type, amount, and urgency
-- Slack interactive messages (Approve / Reject / Ask Question)
+- Google Chat interactive cards (Approve / Reject / Ask Question)
+- Gmail fallback with secure approval page links
 - Escalation on timeout (24h → manager, 48h → owner)
 - Full audit log of every approval decision
 - Batch approvals for routine items (e.g., 15 small material bills)
@@ -426,12 +467,12 @@ flowchart TD
 
 | Phase | Agents | Integrations |
 |---|---|---|
-| **1 — Foundation** | Controller, Approval Gateway | QBO API, Chase→QBO bank feed (manual setup) |
+| **1 — Foundation** | Controller, Approval Gateway | QBO API, Google Chat app, Chase→QBO bank feed (manual setup) |
 | **2 — Money In** | AR, Progress Billing | QBO invoicing, job system |
 | **3 — Money Out** | AP, Sub Compliance | Bill.com API, Bill.com↔QBO sync |
 | **4 — Jobs** | Job Costing, Change Order | QBO Projects/Classes, job system |
 | **5 — People** | Commission, Payroll | BambooHR API, BambooHR→QBO JE sync |
-| **6 — Intelligence** | Profitability, Cash Flow | QBO reporting, Slack dashboards |
+| **6 — Intelligence** | Profitability, Cash Flow | QBO reporting, Google Chat dashboards |
 | **7 — Orchestration** | Finance Orchestrator | Wire all agents, webhooks, event bus |
 
 ---
@@ -452,7 +493,7 @@ flowchart TD
 | 10 | Change Order Agent | Home services | QBO + job system |
 | 11 | Subcontractor Compliance Agent | Home services | Bill.com + document store |
 | 12 | Cash Flow Agent | Home services | QBO (read-only) |
-| 13 | Approval Gateway Agent | Cross-cutting | Slack + approval queue |
+| 13 | Approval Gateway Agent | Cross-cutting | Google Chat + Gmail + approval queue DB |
 
 **Total: 13 agents.**
 
@@ -463,5 +504,5 @@ flowchart TD
 1. **Job system of record** — What do you use today? (Jobber, ServiceTitan, Buildertrend, HubSpot, spreadsheets?) Job Costing and Progress Billing agents need this.
 2. **Commission rules** — Flat % of sale, % of gross margin, or tiered by job size? Paid at contract signing, milestone, or job completion?
 3. **Approval thresholds** — Dollar amounts that trigger different approval chains (e.g., <$500 auto-approve, $500–$5K manager, >$5K owner).
-4. **Slack vs. email for approvals** — Slack is recommended for speed; confirm your team uses it.
+4. **Google Chat space for approvals** — Which Chat space or DM should receive approval cards? (e.g., #finance-approvals)
 5. **Prevailing wage / certified payroll** — Do you do any government or commercial work requiring certified payroll reports?
