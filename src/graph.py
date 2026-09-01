@@ -15,6 +15,7 @@ class AgentState(TypedDict):
     confirmation: dict
     ap_result: dict
     change_order_result: dict
+    orchestrator_result: dict
 
 agents = None
 
@@ -41,30 +42,18 @@ def spam_node(state: AgentState):
     return {}
 
 def finance_node(state: AgentState):
-    """Route financial emails to the appropriate specialist agent."""
-    from src.agents.ap_agent import APAgent
+    """Route financial emails through the Finance Orchestrator."""
+    from src.agents.finance_orchestrator import FinanceOrchestrator
     email = state['email']
-    triage = state['triage']
+    triage = state.get('triage', {})
+    result = FinanceOrchestrator().handle_email(email, triage)
+
     category = triage.get('category', 'BILL')
-
     if category in ('BILL', 'VENDOR_DOC', 'RECEIPT'):
-        ap = APAgent()
-        return {"ap_result": ap.process_bill_from_email(email)}
-
+        return {"ap_result": result.get("result", result)}
     if category == 'CHANGE_ORDER':
-        from src.agents.change_order_agent import ChangeOrderAgent
-        co = ChangeOrderAgent()
-        return {"change_order_result": co.intake_from_email(email)}
-
-    from src.agents.approval_gateway_agent import ApprovalGatewayAgent
-    gateway = ApprovalGatewayAgent()
-    gateway.submit(
-        approval_type=category.lower(),
-        title=f"{email['subject']} — from {email['sender']}",
-        description=email['body'][:500],
-        agent_name="finance_orchestrator",
-    )
-    return {}
+        return {"change_order_result": result.get("result", result)}
+    return {"orchestrator_result": result}
 
 def rag_node(state: AgentState):
     email = state['email']

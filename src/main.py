@@ -10,6 +10,7 @@ from src.graph import app as workflow_app
 from src.tools.rag import add_to_vector_store
 from src.routes.approval_page import router as approval_router
 from src.routes.chat_webhook import router as chat_router
+from src.routes.webhooks import router as webhooks_router
 from src.agents.approval_gateway_agent import ApprovalGatewayAgent
 from src.agents.controller_agent import ControllerAgent
 from src.agents.ar_agent import ARAgent
@@ -22,12 +23,14 @@ from src.agents.commission_agent import CommissionAgent
 from src.agents.payroll_agent import PayrollAgent
 from src.agents.profitability_agent import ProfitabilityAgent
 from src.agents.cash_flow_agent import CashFlowAgent
+from src.agents.finance_orchestrator import FinanceOrchestrator
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Cozy Finance Agents")
 app.include_router(approval_router)
 app.include_router(chat_router)
+app.include_router(webhooks_router)
 
 approval_gateway = ApprovalGatewayAgent()
 controller = ControllerAgent()
@@ -41,6 +44,7 @@ commission = CommissionAgent()
 payroll = PayrollAgent()
 profitability = ProfitabilityAgent()
 cash_flow = CashFlowAgent()
+orchestrator = FinanceOrchestrator()
 
 
 class VoiceNote(BaseModel):
@@ -154,6 +158,19 @@ class JobAffordabilityRequest(BaseModel):
 class CashScenarioRequest(BaseModel):
     accelerate_ar_days: Optional[int] = 0
     defer_ap_days: Optional[int] = 0
+
+
+class OrchestratorEventRequest(BaseModel):
+    event_type: str
+    source: str = "api"
+    payload: dict = {}
+    priority: Optional[int] = None
+
+
+class JobEventRequest(BaseModel):
+    event_name: str  # completion, milestone, cancellation, signing
+    milestone_name: Optional[str] = None
+    reason: Optional[str] = None
 
 
 @app.on_event("startup")
@@ -711,6 +728,54 @@ def cash_flow_scenario(request: CashScenarioRequest):
 @app.post("/finance/cash-flow/alert")
 def push_cash_alert():
     return cash_flow.push_cash_alert_to_chat()
+
+
+# --- Finance Orchestrator Endpoints ---
+
+@app.get("/finance/orchestrator/status")
+def orchestrator_status():
+    return orchestrator.get_status()
+
+
+@app.get("/finance/orchestrator/events")
+def orchestrator_events(status: str = None, limit: int = 50):
+    from src.db import event_bus as bus
+    return bus.list_events(status=status, limit=limit)
+
+
+@app.get("/finance/orchestrator/queue")
+def orchestrator_queue(limit: int = 20):
+    return orchestrator.get_event_queue(limit)
+
+
+@app.post("/finance/orchestrator/events")
+def orchestrator_handle_event(request: OrchestratorEventRequest):
+    return orchestrator.handle_event(
+        event_type=request.event_type,
+        source=request.source,
+        payload=request.payload,
+        priority=request.priority,
+    )
+
+
+@app.post("/finance/orchestrator/jobs/{job_id}/events")
+def orchestrator_job_event(job_id: str, request: JobEventRequest):
+    payload = {}
+    if request.milestone_name:
+        payload["milestone_name"] = request.milestone_name
+    if request.reason:
+        payload["reason"] = request.reason
+    return orchestrator.handle_job_event(job_id, request.event_name, payload)
+
+
+@app.post("/finance/orchestrator/scheduled/{job_name}")
+def orchestrator_scheduled_job(job_name: str):
+    return orchestrator.run_scheduled_job(job_name)
+
+
+@app.post("/finance/orchestrator/scheduled")
+def orchestrator_run_all_scheduled():
+    return orchestrator.run_all_scheduled_jobs()
 
 
 if __name__ == "__main__":

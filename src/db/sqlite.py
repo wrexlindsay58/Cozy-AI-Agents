@@ -24,6 +24,7 @@ def init_db():
     from src.db.change_orders import init_change_order_db
     from src.db.commissions import init_commission_db
     from src.db.payroll import init_payroll_db
+    from src.db.event_bus import init_event_bus_db
     init_approval_db()
     init_job_billing_db()
     init_sub_compliance_db()
@@ -31,6 +32,7 @@ def init_db():
     init_change_order_db()
     init_commission_db()
     init_payroll_db()
+    init_event_bus_db()
 
 
 def is_email_processed(email_id: str) -> bool:
