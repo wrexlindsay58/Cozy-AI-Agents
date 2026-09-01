@@ -20,9 +20,13 @@ def init_db():
     from src.db.approval_queue import init_approval_db
     from src.db.job_billing import init_job_billing_db
     from src.db.sub_compliance import init_sub_compliance_db
+    from src.db.job_costing import init_job_costing_db
+    from src.db.change_orders import init_change_order_db
     init_approval_db()
     init_job_billing_db()
     init_sub_compliance_db()
+    init_job_costing_db()
+    init_change_order_db()
 
 
 def is_email_processed(email_id: str) -> bool:

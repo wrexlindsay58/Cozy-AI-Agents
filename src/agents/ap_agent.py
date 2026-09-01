@@ -9,6 +9,8 @@ from src.tools import quickbooks_tools as qbo
 from src.agents.approval_gateway_agent import ApprovalGatewayAgent
 from src.agents.sub_compliance_agent import SubComplianceAgent
 from src.config import AP_AUTO_APPROVE_THRESHOLD, AP_MANAGER_THRESHOLD
+from src.db import job_billing as jb
+from src.agents.job_costing_agent import JobCostingAgent
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +128,13 @@ class APAgent:
 
             if bill:
                 bill_id = bill.get("id", bill.get("billId"))
+                if job_reference:
+                    jobs = jb.list_jobs()
+                    matched = next((j for j in jobs if job_reference.lower() in j["name"].lower()), None)
+                    if matched:
+                        JobCostingAgent().allocate_ap_cost(
+                            matched["id"], amount, description, bill_id or invoice_number
+                        )
                 return self._submit_payment_proposal(
                     vendor_name, amount, invoice_number, bill_id, approval_tier, description
                 )

@@ -16,6 +16,8 @@ from src.agents.ar_agent import ARAgent
 from src.agents.progress_billing_agent import ProgressBillingAgent
 from src.agents.ap_agent import APAgent
 from src.agents.sub_compliance_agent import SubComplianceAgent
+from src.agents.job_costing_agent import JobCostingAgent
+from src.agents.change_order_agent import ChangeOrderAgent
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,8 @@ ar_agent = ARAgent()
 progress_billing = ProgressBillingAgent()
 ap_agent = APAgent()
 sub_compliance = SubComplianceAgent()
+job_costing = JobCostingAgent()
+change_order = ChangeOrderAgent()
 
 
 class VoiceNote(BaseModel):
@@ -84,6 +88,30 @@ class RegisterVendorRequest(BaseModel):
 class UpdateCOIRequest(BaseModel):
     coi_expiration: str
     document_url: Optional[str] = None
+
+
+class SetBudgetRequest(BaseModel):
+    labor: Optional[float] = 0
+    materials: Optional[float] = 0
+    subcontractor: Optional[float] = 0
+    permits: Optional[float] = 0
+    overhead: Optional[float] = 0
+    other: Optional[float] = 0
+
+
+class AddCostRequest(BaseModel):
+    category: str
+    amount: float
+    description: str = ""
+    source: str = "manual"
+
+
+class CreateChangeOrderRequest(BaseModel):
+    title: str
+    description: str
+    additional_revenue: float
+    additional_cost: float
+    submit_approval: bool = True
 
 
 @app.on_event("startup")
@@ -226,6 +254,21 @@ def billing_alerts():
     return progress_billing.check_billing_alerts()
 
 
+@app.get("/finance/jobs/portfolio")
+def job_portfolio_summary():
+    return job_costing.get_portfolio_summary()
+
+
+@app.get("/finance/jobs/wip")
+def job_wip_report():
+    return job_costing.get_wip_report()
+
+
+@app.get("/finance/jobs/variance-alerts")
+def job_variance_alerts():
+    return job_costing.get_variance_alerts()
+
+
 @app.get("/finance/jobs/{job_id}")
 def get_job(job_id: str):
     job = progress_billing.get_job(job_id)
@@ -346,6 +389,86 @@ def compliance_expiring_coi(within_days: int = 30):
 @app.get("/finance/compliance/non-compliant")
 def compliance_non_compliant():
     return sub_compliance.list_non_compliant()
+
+
+# --- Job Costing Endpoints (job-specific) ---
+
+@app.get("/finance/jobs/{job_id}/pnl")
+def job_pnl(job_id: str):
+    pnl = job_costing.get_job_pnl(job_id)
+    if not pnl:
+        return {"error": "Job not found"}
+    return pnl
+
+
+@app.put("/finance/jobs/{job_id}/budget")
+def set_job_budget(job_id: str, request: SetBudgetRequest):
+    return job_costing.set_budget(job_id, request.model_dump(exclude_none=True))
+
+
+@app.post("/finance/jobs/{job_id}/costs")
+def add_job_cost(job_id: str, request: AddCostRequest):
+    return job_costing.add_cost(
+        job_id, request.category, request.amount,
+        request.description, request.source,
+    )
+
+
+# --- Change Order Endpoints ---
+
+@app.get("/finance/change-orders/risks")
+def change_order_risks():
+    return change_order.get_risk_report()
+
+
+@app.get("/finance/change-orders/unsigned")
+def change_orders_unsigned(job_id: str = None):
+    return change_order.list_unsigned(job_id)
+
+
+@app.get("/finance/jobs/{job_id}/change-orders")
+def list_job_change_orders(job_id: str):
+    return change_order.list_for_job(job_id)
+
+
+@app.post("/finance/jobs/{job_id}/change-orders")
+def create_change_order(job_id: str, request: CreateChangeOrderRequest):
+    return change_order.create_change_order(
+        job_id=job_id,
+        title=request.title,
+        description=request.description,
+        additional_revenue=request.additional_revenue,
+        additional_cost=request.additional_cost,
+        submit_approval=request.submit_approval,
+    )
+
+
+@app.get("/finance/change-orders/{co_id}")
+def get_change_order(co_id: str):
+    co = change_order.get_change_order(co_id)
+    if not co:
+        return {"error": "Change order not found"}
+    return co
+
+
+@app.post("/finance/change-orders/{co_id}/approve")
+def approve_change_order(co_id: str):
+    return change_order.approve(co_id)
+
+
+@app.post("/finance/change-orders/{co_id}/reject")
+def reject_change_order(co_id: str):
+    return change_order.reject(co_id)
+
+
+@app.post("/finance/change-orders/{co_id}/customer-approved")
+def customer_approve_change_order(co_id: str):
+    return change_order.mark_customer_approved(co_id)
+
+
+@app.get("/finance/change-orders/{co_id}/draft-email")
+def draft_change_order_email(co_id: str):
+    return change_order.draft_customer_email(co_id)
 
 
 if __name__ == "__main__":

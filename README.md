@@ -21,10 +21,12 @@ An autonomous multi-agent finance system for home services / home improvement co
 - **Progress Billing Agent**: Job setup, deposit/milestone/final/retainage invoicing, billing-behind alerts
 - **AP Agent**: Bill.com bill intake, Grok-powered extraction, compliance checks, payment proposals
 - **Subcontractor Compliance Agent**: COI tracking, W-9 verification, blocks non-compliant sub payments
+- **Job Costing Agent**: Real-time job P&L, budget variance alerts, WIP tracking
+- **Change Order Agent**: Scope change intake, margin impact analysis, customer approval drafts
 
 ### Planned Agents
 
-Commission, Payroll (BambooHR), Job Costing, Profitability, Change Order, Cash Flow
+Commission, Payroll (BambooHR), Profitability, Cash Flow
 
 ## Architecture
 
@@ -102,6 +104,14 @@ python -m src.main
 | `/finance/compliance/dashboard` | GET | Subcontractor compliance overview |
 | `/finance/compliance/vendors` | POST/GET | Register/list vendors |
 | `/finance/compliance/expiring` | GET | COIs expiring within N days |
+| `/finance/jobs/{id}/pnl` | GET | Job P&L (revenue, costs, margin) |
+| `/finance/jobs/{id}/budget` | PUT | Set job budget estimates |
+| `/finance/jobs/{id}/costs` | POST | Add cost entry to job |
+| `/finance/jobs/portfolio` | GET | Portfolio summary across active jobs |
+| `/finance/jobs/wip` | GET | Work-in-progress report |
+| `/finance/jobs/variance-alerts` | GET | Jobs at 80/100/120% of budget |
+| `/finance/jobs/{id}/change-orders` | POST/GET | Create/list change orders |
+| `/finance/change-orders/risks` | GET | Unsigned/low-margin change orders |
 | `/chat/webhook` | POST | Google Chat CARD_CLICKED handler |
 
 ## Critical Guardrails
