@@ -1,6 +1,7 @@
 import time
 import uuid
 import logging
+from typing import Optional
 from fastapi import FastAPI, BackgroundTasks
 from pydantic import BaseModel
 from src.db.sqlite import init_db, is_email_processed, mark_email_processed
@@ -11,6 +12,8 @@ from src.routes.approval_page import router as approval_router
 from src.routes.chat_webhook import router as chat_router
 from src.agents.approval_gateway_agent import ApprovalGatewayAgent
 from src.agents.controller_agent import ControllerAgent
+from src.agents.ar_agent import ARAgent
+from src.agents.progress_billing_agent import ProgressBillingAgent
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +23,8 @@ app.include_router(chat_router)
 
 approval_gateway = ApprovalGatewayAgent()
 controller = ControllerAgent()
+ar_agent = ARAgent()
+progress_billing = ProgressBillingAgent()
 
 
 class VoiceNote(BaseModel):
@@ -35,6 +40,20 @@ class ApprovalRequest(BaseModel):
     payload: dict = {}
     approver_email: str = None
     agent_name: str = None
+
+
+class CreateJobRequest(BaseModel):
+    name: str
+    customer_name: str
+    contract_amount: float
+    customer_email: Optional[str] = None
+    deposit_percent: Optional[float] = None
+    retainage_percent: Optional[float] = None
+    qbo_customer_id: Optional[str] = None
+
+
+class UpdateCompletionRequest(BaseModel):
+    completion_percent: float
 
 
 @app.on_event("startup")
@@ -118,6 +137,107 @@ def get_close_checklist():
 @app.get("/finance/data-quality")
 def check_data_quality():
     return controller.find_data_quality_issues()
+
+
+# --- AR Agent Endpoints ---
+
+@app.get("/finance/ar/summary")
+def ar_summary():
+    return ar_agent.get_summary()
+
+
+@app.get("/finance/ar/aging")
+def ar_aging():
+    return ar_agent.get_ar_aging()
+
+
+@app.get("/finance/ar/overdue")
+def ar_overdue():
+    return ar_agent.get_overdue_invoices()
+
+
+@app.get("/finance/ar/payments/match")
+def ar_match_payments(since_date: str = None):
+    return ar_agent.match_payments(since_date)
+
+
+@app.post("/finance/ar/collections")
+def ar_run_collections():
+    return ar_agent.run_collections_cycle()
+
+
+@app.get("/finance/ar/lien-rights")
+def ar_lien_rights(job_completion_date: str):
+    return ar_agent.get_lien_rights_alert(job_completion_date)
+
+
+# --- Progress Billing Endpoints ---
+
+@app.post("/finance/jobs")
+def create_job(request: CreateJobRequest):
+    return progress_billing.create_job(
+        name=request.name,
+        customer_name=request.customer_name,
+        contract_amount=request.contract_amount,
+        customer_email=request.customer_email,
+        deposit_percent=request.deposit_percent,
+        retainage_percent=request.retainage_percent,
+        qbo_customer_id=request.qbo_customer_id,
+    )
+
+
+@app.get("/finance/jobs")
+def list_jobs(status: str = None):
+    return progress_billing.list_jobs(status)
+
+
+@app.get("/finance/jobs/alerts")
+def billing_alerts():
+    return progress_billing.check_billing_alerts()
+
+
+@app.get("/finance/jobs/{job_id}")
+def get_job(job_id: str):
+    job = progress_billing.get_job(job_id)
+    if not job:
+        return {"error": "Job not found"}
+    return job
+
+
+@app.get("/finance/jobs/{job_id}/schedule")
+def get_billing_schedule(job_id: str):
+    schedule = progress_billing.get_billing_schedule(job_id)
+    if not schedule:
+        return {"error": "Job not found"}
+    return schedule
+
+
+@app.patch("/finance/jobs/{job_id}/completion")
+def update_job_completion(job_id: str, request: UpdateCompletionRequest):
+    job = progress_billing.update_completion(job_id, request.completion_percent)
+    if not job:
+        return {"error": "Job not found"}
+    return job
+
+
+@app.post("/finance/jobs/{job_id}/invoice/deposit")
+def invoice_deposit(job_id: str):
+    return progress_billing.invoice_deposit(job_id)
+
+
+@app.post("/finance/jobs/{job_id}/invoice/milestone/{milestone_name}")
+def invoice_milestone(job_id: str, milestone_name: str):
+    return progress_billing.invoice_milestone(job_id, milestone_name)
+
+
+@app.post("/finance/jobs/{job_id}/invoice/final")
+def invoice_final(job_id: str):
+    return progress_billing.invoice_final(job_id)
+
+
+@app.post("/finance/jobs/{job_id}/invoice/retainage")
+def invoice_retainage(job_id: str):
+    return progress_billing.invoice_retainage(job_id)
 
 
 if __name__ == "__main__":

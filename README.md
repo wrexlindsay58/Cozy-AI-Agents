@@ -13,7 +13,12 @@ An autonomous multi-agent finance system for home services / home improvement co
 
 ### Planned Agents (see [docs/FINANCE_ARCHITECTURE.md](docs/FINANCE_ARCHITECTURE.md))
 
-AR, AP (Bill.com), Commission, Payroll (BambooHR), Job Costing, Profitability, Progress Billing, Change Order, Sub Compliance, Cash Flow
+~~AR, Progress Billing~~ AP (Bill.com), Commission, Payroll (BambooHR), Job Costing, Profitability, Change Order, Sub Compliance, Cash Flow
+
+### Built Agents
+
+- **AR Agent**: AR aging, overdue tracking, payment matching, collections drafts, lien rights alerts
+- **Progress Billing Agent**: Job setup, deposit/milestone/final/retainage invoicing, billing-behind alerts
 
 ## Architecture
 
@@ -35,32 +40,13 @@ OAuth scopes are configured in `src/config.py`. Download `credentials.json` to p
 
 ### 2. Environment Variables
 
-```env
-GEMINI_API_KEY=your_gemini_api_key
-DB_PATH=assistant.db
+Copy the example file and fill in your values:
 
-# QuickBooks Online
-QUICKBOOKS_CLIENT_ID=
-QUICKBOOKS_CLIENT_SECRET=
-QUICKBOOKS_REALM_ID=
-QUICKBOOKS_REFRESH_TOKEN=
-QUICKBOOKS_ENVIRONMENT=sandbox
-
-# Bill.com (Phase 3)
-BILLCOM_DEV_KEY=
-BILLCOM_ORG_ID=
-BILLCOM_USERNAME=
-BILLCOM_PASSWORD=
-
-# BambooHR (Phase 5)
-BAMBOOHR_SUBDOMAIN=
-BAMBOOHR_API_KEY=
-
-# Google Chat approvals
-GOOGLE_CHAT_SPACE=spaces/AAAA...
-DEFAULT_APPROVER_EMAIL=owner@company.com
-APPROVAL_BASE_URL=https://your-domain.com
+```bash
+cp .env.example .env
 ```
+
+See [.env.example](.env.example) for all required variables.
 
 ### 3. Install and Run
 
@@ -80,6 +66,17 @@ python -m src.main
 | `/finance/reconciliation` | GET | Run reconciliation check |
 | `/finance/close-checklist` | GET | Month-end close checklist |
 | `/finance/data-quality` | GET | Data quality scan |
+| `/finance/ar/summary` | GET | AR summary (outstanding, overdue) |
+| `/finance/ar/aging` | GET | AR aging buckets (7/14/30/60 day) |
+| `/finance/ar/overdue` | GET | Overdue invoices |
+| `/finance/ar/collections` | POST | Draft collections emails for overdue |
+| `/finance/ar/lien-rights` | GET | Lien rights deadline alert |
+| `/finance/jobs` | POST/GET | Create/list jobs |
+| `/finance/jobs/{id}/invoice/deposit` | POST | Invoice contract deposit |
+| `/finance/jobs/{id}/invoice/milestone/{name}` | POST | Invoice milestone draw |
+| `/finance/jobs/{id}/invoice/final` | POST | Final invoice (less retainage) |
+| `/finance/jobs/{id}/invoice/retainage` | POST | Retainage release invoice |
+| `/finance/jobs/alerts` | GET | Jobs where billing is behind completion |
 | `/chat/webhook` | POST | Google Chat CARD_CLICKED handler |
 
 ## Critical Guardrails

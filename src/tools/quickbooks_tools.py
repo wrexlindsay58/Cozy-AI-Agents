@@ -106,3 +106,68 @@ def create_journal_entry(lines: list[dict], memo: str = "") -> dict | None:
     }
     result = _qbo_request("POST", "journalentry", json=body)
     return result.get("JournalEntry") if result else None
+
+
+def get_customers() -> list[dict]:
+    return query("SELECT * FROM Customer MAXRESULTS 1000")
+
+
+def get_customer_by_name(name: str) -> dict | None:
+    customers = query(f"SELECT * FROM Customer WHERE DisplayName = '{name}' MAXRESULTS 1")
+    return customers[0] if customers else None
+
+
+def get_invoice(invoice_id: str) -> dict | None:
+    result = _qbo_request("GET", f"invoice/{invoice_id}")
+    return result.get("Invoice") if result else None
+
+
+def create_invoice(
+    customer_id: str,
+    line_items: list[dict],
+    due_date: str = None,
+    memo: str = "",
+    doc_number: str = None,
+) -> dict | None:
+    """Create a QBO invoice.
+
+    line_items: [{"description": "...", "amount": 100.0, "item_id": "1"}]
+    """
+    lines = []
+    for i, item in enumerate(line_items, start=1):
+        line = {
+            "LineNum": i,
+            "Amount": item["amount"],
+            "DetailType": "SalesItemLineDetail",
+            "Description": item.get("description", ""),
+            "SalesItemLineDetail": {
+                "ItemRef": {"value": item.get("item_id", "1")},
+                "Qty": 1,
+                "UnitPrice": item["amount"],
+            },
+        }
+        lines.append(line)
+
+    body = {
+        "Line": lines,
+        "CustomerRef": {"value": customer_id},
+        "PrivateNote": memo,
+    }
+    if due_date:
+        body["DueDate"] = due_date
+    if doc_number:
+        body["DocNumber"] = doc_number
+
+    result = _qbo_request("POST", "invoice", json=body)
+    return result.get("Invoice") if result else None
+
+
+def get_payments(since_date: str = None) -> list[dict]:
+    if since_date:
+        return query(f"SELECT * FROM Payment WHERE TxnDate >= '{since_date}' MAXRESULTS 100")
+    return query("SELECT * FROM Payment MAXRESULTS 100")
+
+
+def get_items() -> list[dict]:
+    return query("SELECT * FROM Item WHERE Type = 'Service' MAXRESULTS 100")
+

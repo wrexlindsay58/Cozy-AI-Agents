@@ -18,7 +18,9 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def init_db():
     Base.metadata.create_all(bind=engine)
     from src.db.approval_queue import init_approval_db
+    from src.db.job_billing import init_job_billing_db
     init_approval_db()
+    init_job_billing_db()
 
 
 def is_email_processed(email_id: str) -> bool:
