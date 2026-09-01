@@ -20,6 +20,10 @@ TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
 _access_token = None
 
 
+def is_configured() -> bool:
+    return all([QUICKBOOKS_CLIENT_ID, QUICKBOOKS_CLIENT_SECRET, QUICKBOOKS_REFRESH_TOKEN, QUICKBOOKS_REALM_ID])
+
+
 def _get_access_token() -> str | None:
     global _access_token
     if not all([QUICKBOOKS_CLIENT_ID, QUICKBOOKS_CLIENT_SECRET, QUICKBOOKS_REFRESH_TOKEN]):

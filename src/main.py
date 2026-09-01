@@ -18,6 +18,8 @@ from src.agents.ap_agent import APAgent
 from src.agents.sub_compliance_agent import SubComplianceAgent
 from src.agents.job_costing_agent import JobCostingAgent
 from src.agents.change_order_agent import ChangeOrderAgent
+from src.agents.commission_agent import CommissionAgent
+from src.agents.payroll_agent import PayrollAgent
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,8 @@ ap_agent = APAgent()
 sub_compliance = SubComplianceAgent()
 job_costing = JobCostingAgent()
 change_order = ChangeOrderAgent()
+commission = CommissionAgent()
+payroll = PayrollAgent()
 
 
 class VoiceNote(BaseModel):
@@ -112,6 +116,28 @@ class CreateChangeOrderRequest(BaseModel):
     additional_revenue: float
     additional_cost: float
     submit_approval: bool = True
+
+
+class SetAttributionRequest(BaseModel):
+    sales_rep_id: Optional[str] = None
+    sales_rep_name: Optional[str] = None
+    lead_setter_id: Optional[str] = None
+    lead_setter_name: Optional[str] = None
+    sales_rep_split: Optional[float] = 80.0
+    lead_setter_split: Optional[float] = 20.0
+
+
+class AccrueCommissionRequest(BaseModel):
+    trigger: str  # signing, milestone, completion
+
+
+class ProposePayoutRequest(BaseModel):
+    commission_ids: Optional[list[str]] = None
+    period: Optional[str] = None
+
+
+class ProposePayrollRequest(BaseModel):
+    period: Optional[str] = None
 
 
 @app.on_event("startup")
@@ -474,6 +500,114 @@ def customer_approve_change_order(co_id: str):
 @app.get("/finance/change-orders/{co_id}/draft-email")
 def draft_change_order_email(co_id: str):
     return change_order.draft_customer_email(co_id)
+
+
+# --- Commission Agent Endpoints ---
+
+@app.get("/finance/commissions/summary")
+def commission_summary():
+    return commission.get_summary()
+
+
+@app.get("/finance/commissions/rules")
+def commission_rules():
+    return commission.get_rules()
+
+
+@app.get("/finance/commissions")
+def list_commissions(job_id: str = None, period: str = None, status: str = None):
+    return commission.list_commissions(job_id=job_id, period=period, status=status)
+
+
+@app.put("/finance/jobs/{job_id}/attribution")
+def set_job_attribution(job_id: str, request: SetAttributionRequest):
+    return commission.set_attribution(job_id, **request.model_dump(exclude_none=True))
+
+
+@app.get("/finance/jobs/{job_id}/attribution")
+def get_job_attribution(job_id: str):
+    from src.db import commissions as comm_db
+    attr = comm_db.get_attribution(job_id)
+    if not attr:
+        return {"error": "No attribution set for this job"}
+    return attr
+
+
+@app.post("/finance/jobs/{job_id}/commissions/calculate")
+def calculate_job_commissions(job_id: str, trigger: str = None):
+    records = commission.calculate_for_job(job_id, trigger=trigger)
+    return {"job_id": job_id, "commissions": records, "count": len(records)}
+
+
+@app.post("/finance/jobs/{job_id}/commissions/accrue")
+def accrue_job_commissions(job_id: str, request: AccrueCommissionRequest):
+    return commission.accrue_at_trigger(job_id, request.trigger)
+
+
+@app.post("/finance/jobs/{job_id}/commissions/clawback")
+def clawback_job_commissions(job_id: str, reason: str = "Job cancelled"):
+    return commission.clawback(job_id, reason)
+
+
+@app.get("/finance/commissions/statement/{rep_name}")
+def commission_statement(rep_name: str, period: str = None):
+    return commission.get_monthly_statement(rep_name, period)
+
+
+@app.post("/finance/commissions/propose-payout")
+def propose_commission_payout(request: ProposePayoutRequest):
+    return commission.propose_payout(
+        commission_ids=request.commission_ids,
+        period=request.period,
+    )
+
+
+# --- Payroll Agent Endpoints ---
+
+@app.get("/finance/payroll/summary")
+def payroll_summary():
+    return payroll.get_summary()
+
+
+@app.get("/finance/payroll/employees")
+def payroll_employees():
+    return payroll.get_employee_roster()
+
+
+@app.get("/finance/payroll/validate")
+def payroll_validate(period: str = None):
+    return payroll.pre_validate_payroll(period)
+
+
+@app.get("/finance/payroll/runs")
+def list_payroll_runs(period: str = None, status: str = None):
+    from src.db import payroll as payroll_db
+    return payroll_db.list_payroll_runs(period=period, status=status)
+
+
+@app.get("/finance/payroll/runs/{run_id}")
+def get_payroll_run(run_id: str):
+    from src.db import payroll as payroll_db
+    run = payroll_db.get_payroll_run(run_id)
+    if not run:
+        return {"error": "Payroll run not found"}
+    return run
+
+
+@app.post("/finance/payroll/propose")
+def propose_payroll_run(request: ProposePayrollRequest):
+    return payroll.propose_payroll_run(request.period)
+
+
+@app.post("/finance/payroll/allocate")
+def allocate_payroll_labor(period: str):
+    allocations = payroll.allocate_labor_costs(period)
+    return {"period": period, "allocations": allocations, "count": len(allocations)}
+
+
+@app.get("/finance/payroll/reconcile")
+def reconcile_payroll(period: str = None):
+    return payroll.reconcile_payroll_jes(period)
 
 
 if __name__ == "__main__":

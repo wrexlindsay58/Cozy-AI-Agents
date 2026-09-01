@@ -108,6 +108,18 @@ def _execute_post_approval_action(proposal: dict, approved_by: str):
             from src.agents.change_order_agent import ChangeOrderAgent
             ChangeOrderAgent().approve(co_id, approved_by=approved_by)
 
+    if action == "approve_commission_payout":
+        commission_ids = payload.get("commission_ids", [])
+        if commission_ids:
+            from src.agents.commission_agent import CommissionAgent
+            CommissionAgent().approve_payout(commission_ids)
+
+    if action == "approve_payroll_run":
+        run_id = payload.get("payroll_run_id")
+        if run_id:
+            from src.agents.payroll_agent import PayrollAgent
+            PayrollAgent().approve_payroll_run(run_id, approved_by)
+
 
 def _execute_post_rejection_action(proposal: dict):
     """Run downstream actions after a rejection is resolved."""
@@ -122,6 +134,21 @@ def _execute_post_rejection_action(proposal: dict):
         if co_id:
             from src.agents.change_order_agent import ChangeOrderAgent
             ChangeOrderAgent().reject(co_id)
+
+    if action == "approve_commission_payout":
+        commission_ids = payload.get("commission_ids", [])
+        if commission_ids:
+            from src.db import commissions as comm_db
+            from src.db.commissions import CommissionStatus
+            for cid in commission_ids:
+                comm_db.update_commission_status(cid, CommissionStatus.ACCRUED.value)
+
+    if action == "approve_payroll_run":
+        run_id = payload.get("payroll_run_id")
+        if run_id:
+            from src.db import payroll as payroll_db
+            from src.db.payroll import PayrollRunStatus
+            payroll_db.update_payroll_run_status(run_id, PayrollRunStatus.REJECTED.value)
 
 
 def _sync_channels(proposal: dict):
