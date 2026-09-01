@@ -1,6 +1,6 @@
 # Cozy Finance Agents
 
-An autonomous multi-agent finance system for home services / home improvement companies. Built with Python, LangGraph, Gemini, and Google Workspace.
+An autonomous multi-agent finance system for home services / home improvement companies. Built with Python, LangGraph, Grok (xAI), and Google Workspace.
 
 ## Features
 
@@ -23,7 +23,9 @@ An autonomous multi-agent finance system for home services / home improvement co
 ## Architecture
 
 - **LangGraph**: Multi-agent workflow orchestration
-- **Gemini API**: Flash for triage, Pro for complex reasoning
+- **Grok (xAI)**: Primary LLM — fast model for triage, Grok 4.6 for complex reasoning
+- **Ollama** (optional): Open-source local fallback (Llama, Mistral, etc.)
+- **Embeddings**: Local sentence-transformers (no API key) for RAG
 - **QuickBooks Online**: System of record (invoices, bills, bank register)
 - **Bill.com**: AP and payment proposals (planned)
 - **BambooHR**: Payroll and commissions (planned)
@@ -46,7 +48,16 @@ Copy the example file and fill in your values:
 cp .env.example .env
 ```
 
-See [.env.example](.env.example) for all required variables.
+See [.env.example](.env.example) for all required variables. Key LLM settings:
+
+```env
+LLM_PROVIDER=xai          # xai | ollama | auto
+XAI_API_KEY=              # Get at https://console.x.ai
+GROK_FAST_MODEL=grok-4.20-0309-non-reasoning
+GROK_PRO_MODEL=grok-4.6
+OLLAMA_BASE_URL=http://localhost:11434   # optional fallback
+LLM_FALLBACK_ENABLED=true
+```
 
 ### 3. Install and Run
 

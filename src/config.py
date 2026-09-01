@@ -3,8 +3,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Gemini API Keys
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# LLM Provider (Grok/xAI primary, Ollama open-source fallback)
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "xai")  # xai | ollama | auto
+XAI_API_KEY = os.getenv("XAI_API_KEY")
+GROK_FAST_MODEL = os.getenv("GROK_FAST_MODEL", "grok-4.20-0309-non-reasoning")
+GROK_PRO_MODEL = os.getenv("GROK_PRO_MODEL", "grok-4.6")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_FAST_MODEL = os.getenv("OLLAMA_FAST_MODEL", "llama3.2")
+OLLAMA_PRO_MODEL = os.getenv("OLLAMA_PRO_MODEL", "llama3.1:8b")
+LLM_FALLBACK_ENABLED = os.getenv("LLM_FALLBACK_ENABLED", "true").lower() == "true"
 
 # Google API Scopes
 SCOPES = [

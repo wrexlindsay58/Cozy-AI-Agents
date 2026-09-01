@@ -1,19 +1,15 @@
 import json
 import logging
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage, SystemMessage
-from src.config import GEMINI_API_KEY
+from langchain_core.messages import HumanMessage
+from src.llm import invoke_with_fallback
 import re
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def get_model(model_name="gemini-1.5-flash"):
-    return ChatGoogleGenerativeAI(model=model_name, google_api_key=GEMINI_API_KEY)
 
 def extract_json(text):
     try:
-        # Find JSON block using regex
         match = re.search(r'\{.*\}', text, re.DOTALL)
         if match:
             return json.loads(match.group())
@@ -22,11 +18,8 @@ def extract_json(text):
         logger.error(f"Failed to parse JSON from text: {text}. Error: {e}")
         return {}
 
-class Agents:
-    def __init__(self):
-        self.triage_model = get_model("gemini-1.5-flash")
-        self.pro_model = get_model("gemini-1.5-pro")
 
+class Agents:
     def triage_email(self, email_content):
         prompt = f"""
         Analyze the following email and classify it into one of these categories:
@@ -50,7 +43,7 @@ class Agents:
         {email_content}
         """
         try:
-            response = self.triage_model.invoke([HumanMessage(content=prompt)])
+            response = invoke_with_fallback([HumanMessage(content=prompt)], tier="fast")
             return extract_json(response.content)
         except Exception as e:
             logger.error(f"Error in triage_email: {e}")
@@ -76,7 +69,7 @@ class Agents:
         Draft:
         """
         try:
-            response = self.pro_model.invoke([HumanMessage(content=prompt)])
+            response = invoke_with_fallback([HumanMessage(content=prompt)], tier="pro")
             return response.content
         except Exception as e:
             logger.error(f"Error in draft_reply: {e}")
@@ -93,7 +86,7 @@ class Agents:
         Return the suggested slots in a friendly draft reply.
         """
         try:
-            response = self.pro_model.invoke([HumanMessage(content=prompt)])
+            response = invoke_with_fallback([HumanMessage(content=prompt)], tier="pro")
             return response.content
         except Exception as e:
             logger.error(f"Error in propose_slots: {e}")
@@ -116,7 +109,7 @@ class Agents:
         {email_content}
         """
         try:
-            response = self.pro_model.invoke([HumanMessage(content=prompt)])
+            response = invoke_with_fallback([HumanMessage(content=prompt)], tier="pro")
             return extract_json(response.content)
         except Exception as e:
             logger.error(f"Error in parse_confirmation: {e}")
