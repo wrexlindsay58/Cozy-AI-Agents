@@ -4,7 +4,7 @@
 
 **13 agents total:** 1 orchestrator + 12 specialists.
 
-Your stack is **QuickBooks Online (system of record) + Bill.com (AP/payments) + BambooHR (payroll)**. Agents never touch Chase directly. Bank data flows Chase → QuickBooks (native feed, set up once by a human in QBO). Agents read/write only through QuickBooks, Bill.com, and BambooHR APIs.
+Your stack is **QuickBooks Online (system of record) + Bill.com (AP/payments) + BambooHR (payroll)**. Approvals flow through **Google Chat and Gmail** (dual-channel — approver picks either). Agents never touch Chase directly.
 
 **Scrap:** Google Sheets receipt tracking and the old Bookkeeper Agent (`extract_expense_details` / `expense_node`).
 
@@ -154,59 +154,95 @@ flowchart LR
 
 ### Communication and Approval Layer (Google Workspace)
 
-**Recommended: Google Chat as primary approval queue. Gmail as fallback and for external comms.**
+**Decision: Dual-channel approvals via Google Chat and Gmail.**
 
-Your codebase already integrates Gmail, Google Tasks, and Calendar. Google Chat is the best Slack replacement — it supports interactive Approve/Reject buttons natively. Gmail works too, but with tradeoffs (see comparison below).
+Every approval proposal is delivered through **both** Google Chat and Gmail. Approvers choose whichever channel is convenient — the first action wins, and the other channel updates automatically. Your codebase already integrates Gmail; Google Chat adds real-time interactive cards.
 
-| Channel | Use |
+| Channel | Role |
 |---|---|
-| **Google Chat** | Primary approval queue — interactive cards with Approve/Reject buttons, exception alerts, daily financial summary |
-| **Gmail** | Fallback approvals (link to approval page), customer/vendor drafts (never auto-send), AR collections drafts |
+| **Google Chat** | Real-time approval cards with Approve / Reject / Ask Question buttons; exception alerts; daily financial summary |
+| **Gmail** | Approval emails with secure link to a full-detail approval page; customer/vendor drafts (never auto-send); AR collections drafts |
 | **Google Tasks** | Supplementary reminders for pending approvals ("3 bills awaiting your review") |
-| **Approval Queue (internal DB)** | System of record for all pending proposals, status, audit trail |
+| **Approval Queue (internal DB)** | System of record — single source of truth regardless of which channel the approver uses |
 
-#### Google Chat vs Gmail for Approvals
-
-| | Google Chat | Gmail (ViewAction link) | Gmail (ConfirmAction button) | Gmail (reply-based) |
-|---|---|---|---|---|
-| **Interactive Approve/Reject** | Yes — native card buttons | Yes — opens approval web page | Approve only (one button per email) | Yes — reply "APPROVE abc123" |
-| **Setup complexity** | Medium — Chat app + HTTPS webhook | Low — link in email body | High — Google markup registration required | Low — uses existing Gmail API |
-| **Real-time alerts** | Yes — push to Chat space or DM | No — email inbox | No — email inbox | No — email inbox |
-| **Audit trail** | Webhook logs + internal DB | Internal DB + web page logs | Google POST + internal DB | Gmail thread parsing |
-| **Batch approvals** | Yes — card lists multiple items | Yes — approval page | No — one action per email | Awkward |
-| **Already in your codebase** | No (new integration) | Partially (Gmail tools exist) | Partially | Partially |
-| **Recommendation** | **Primary** | **Fallback** | Skip (overkill) | MVP only |
-
-#### Recommended Approval Flow
+#### Dual-Channel Approval Model
 
 ```mermaid
 sequenceDiagram
-    participant Agent as APAgent
+    participant Agent as FinanceAgent
     participant Queue as ApprovalQueue_DB
     participant Chat as GoogleChat
+    participant Gmail as Gmail
     participant Human as Approver
-    participant Bill as Bill.com
+    participant Target as Bill.com_or_QBO
 
-    Agent->>Queue: Create proposal (bill_id, amount, vendor)
-    Agent->>Chat: Post card with Approve/Reject buttons
-    Human->>Chat: Clicks Approve
-    Chat->>Queue: Webhook updates status
-    Queue->>Bill: Route to Bill.com approval chain
-    Chat->>Human: Confirmation message updated
+    Agent->>Queue: Create proposal (id, type, amount, details)
+    par Deliver to both channels
+        Queue->>Chat: Post interactive card
+        Queue->>Gmail: Send approval email with secure link
+    end
+    alt Approver uses Chat
+        Human->>Chat: Clicks Approve
+        Chat->>Queue: Webhook updates status
+    else Approver uses Gmail
+        Human->>Gmail: Clicks approval page link
+        Gmail->>Queue: Web page updates status
+    end
+    Queue->>Chat: Update card to "Approved by Jane via Gmail"
+    Queue->>Gmail: Mark email thread resolved
+    Queue->>Target: Route to Bill.com / QBO / BambooHR
 ```
 
-**Gmail fallback:** If Chat is unavailable or approver prefers email, agent sends a structured email with a secure link to a simple approval page (`Approve` / `Reject` / `View details`). No Google markup registration needed.
+**Key rules:**
+1. **Both channels, every time** — Chat card and Gmail email are sent together for each approval request
+2. **First action wins** — approving in Chat immediately invalidates the Gmail link (and vice versa)
+3. **Cross-channel sync** — the channel not used shows who approved and when: *"Approved by Jane via Gmail at 2:34 PM"*
+4. **Single audit trail** — the Approval Queue DB records the decision, channel used, approver, and timestamp
+5. **No double-execution** — idempotent tokens prevent the same approval from processing twice
+
+#### Channel Strengths (why both)
+
+| | Google Chat | Gmail |
+|---|---|---|
+| **Best for** | Quick in-the-moment approvals, batch review, team visibility | Detailed review on desktop, forwarding to accountant, archival search |
+| **Interaction** | Inline Approve/Reject buttons | Secure link to full approval page with attachments and line items |
+| **Speed** | Push notification, one click | Email notification, click link, review details, approve |
+| **Visibility** | Team space shows all pending items | Personal inbox, easy to search and forward |
+| **Attachments** | Link to details | Full bill PDF, job P&L, commission breakdown inline on approval page |
+
+#### Routing by Approval Type
+
+| Approval type | Google Chat | Gmail | Notes |
+|---|---|---|---|
+| Vendor bills (< $5K) | Card in #finance-approvals | Email to approver | Either channel works |
+| Vendor bills (> $5K) | Card + @mention owner | Email with full bill PDF | Gmail better for document review |
+| Commission payouts | Card with rep name + amount | Email with commission statement | Both for visibility |
+| Journal entries | Card with JE summary | Email with full JE detail | Gmail for complex entries |
+| Change orders | Card with margin impact | Email with change order doc | Gmail for customer-facing review |
+| Payroll pre-validation | Card with total + flags | Email with payroll summary | BambooHR still runs actual payroll |
+| Month-end close items | Card with checklist progress | Email with exception report | Both for CFO review |
+
+#### Google Chat vs Gmail Technical Comparison
+
+| | Google Chat | Gmail (approval page link) |
+|---|---|---|
+| **Interactive Approve/Reject** | Yes — native card buttons | Yes — web page with Approve/Reject/View details |
+| **Setup complexity** | Medium — Chat app + HTTPS webhook | Low — extends existing Gmail tools |
+| **Real-time alerts** | Yes — push to space or DM | Yes — email notification |
+| **Audit trail** | Webhook logs + approval queue DB | Web page logs + approval queue DB |
+| **Batch approvals** | Yes — card lists multiple items | Yes — approval page with checkboxes |
+| **Already in codebase** | New integration needed | Partially built (`gmail_tools.py`) |
 
 ### Approval Layer
 
 | Workflow | Where approval happens |
 |---|---|
-| Vendor bills under threshold | Bill.com auto-route to manager |
-| Vendor bills over threshold | Bill.com → owner/CFO chain |
-| Commission payouts | Agent proposes → Google Chat card → human adds to BambooHR payroll |
-| Payroll run | BambooHR native approval (agent only pre-validates) |
-| Journal entries / adjustments | Google Chat card → human posts to QBO |
-| Customer credit memos | Google Chat card or Gmail link |
+| Vendor bills under threshold | Bill.com auto-route + dual-channel notification |
+| Vendor bills over threshold | Bill.com → owner/CFO chain + dual-channel notification |
+| Commission payouts | Dual-channel → human adds to BambooHR payroll |
+| Payroll run | BambooHR native approval (agent pre-validates via dual-channel) |
+| Journal entries / adjustments | Dual-channel → human posts to QBO |
+| Customer credit memos | Dual-channel |
 
 ---
 
@@ -393,10 +429,13 @@ Not a domain specialist — a cross-cutting workflow agent.
 **Capabilities:**
 - Central approval queue for all agent proposals
 - Route to correct approver by type, amount, and urgency
+- **Dual-channel delivery:** every proposal posts to Google Chat AND sends a Gmail approval email simultaneously
 - Google Chat interactive cards (Approve / Reject / Ask Question)
-- Gmail fallback with secure approval page links
-- Escalation on timeout (24h → manager, 48h → owner)
-- Full audit log of every approval decision
+- Gmail approval emails with secure links to a full-detail approval page
+- Cross-channel sync: first action wins, other channel updates automatically
+- Idempotent approval tokens prevent double-execution
+- Escalation on timeout (24h → manager, 48h → owner) via both channels
+- Full audit log: approver, channel used, timestamp, before/after state
 - Batch approvals for routine items (e.g., 15 small material bills)
 
 ---
@@ -504,5 +543,5 @@ flowchart TD
 1. **Job system of record** — What do you use today? (Jobber, ServiceTitan, Buildertrend, HubSpot, spreadsheets?) Job Costing and Progress Billing agents need this.
 2. **Commission rules** — Flat % of sale, % of gross margin, or tiered by job size? Paid at contract signing, milestone, or job completion?
 3. **Approval thresholds** — Dollar amounts that trigger different approval chains (e.g., <$500 auto-approve, $500–$5K manager, >$5K owner).
-4. **Google Chat space for approvals** — Which Chat space or DM should receive approval cards? (e.g., #finance-approvals)
+4. **Google Chat space for approvals** — Which Chat space should receive approval cards? (e.g., `#finance-approvals`) DMs to specific approvers can also be used for high-value items.
 5. **Prevailing wage / certified payroll** — Do you do any government or commercial work requiring certified payroll reports?
