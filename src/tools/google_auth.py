@@ -32,5 +32,5 @@ def get_tasks_service():
 def get_drive_service():
     return build('drive', 'v3', credentials=get_google_creds())
 
-def get_sheets_service():
-    return build('sheets', 'v4', credentials=get_google_creds())
+def get_chat_service():
+    return build('chat', 'v1', credentials=get_google_creds())

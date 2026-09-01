@@ -14,14 +14,19 @@ class ProcessedEmail(Base):
 engine = create_engine(f'sqlite:///{DB_PATH}')
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+
 def init_db():
     Base.metadata.create_all(bind=engine)
+    from src.db.approval_queue import init_approval_db
+    init_approval_db()
+
 
 def is_email_processed(email_id: str) -> bool:
     session = SessionLocal()
     exists = session.query(ProcessedEmail).filter(ProcessedEmail.email_id == email_id).first() is not None
     session.close()
     return exists
+
 
 def mark_email_processed(email_id: str):
     session = SessionLocal()

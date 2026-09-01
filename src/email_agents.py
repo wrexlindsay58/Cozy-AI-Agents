@@ -30,7 +30,12 @@ class Agents:
     def triage_email(self, email_content):
         prompt = f"""
         Analyze the following email and classify it into one of these categories:
-        SPAM, FYI, RECEIPT, ACTION_REQUIRED, SCHEDULING.
+        SPAM, FYI, BILL, INVOICE, VENDOR_DOC, ACTION_REQUIRED, SCHEDULING.
+
+        Financial categories:
+        - BILL: vendor bill or invoice we need to pay
+        - INVOICE: customer invoice or payment we are receiving
+        - VENDOR_DOC: receipt, statement, or financial document from a vendor
 
         Return a JSON object with:
         {{
@@ -52,26 +57,9 @@ class Agents:
             return {"category": "FYI", "reason": "Error in processing"}
 
     def extract_expense_details(self, email_content):
-        prompt = f"""
-        Extract expense details from the following email/receipt.
-        Return a JSON object with:
-        {{
-            "vendor": "Name of the vendor",
-            "amount": "Numeric value",
-            "date": "YYYY-MM-DD",
-            "tax": "Numeric value if available, else 0",
-            "currency": "Currency code"
-        }}
-
-        Email:
-        {email_content}
-        """
-        try:
-            response = self.pro_model.invoke([HumanMessage(content=prompt)])
-            return extract_json(response.content)
-        except Exception as e:
-            logger.error(f"Error in extract_expense_details: {e}")
-            return {"vendor": "Unknown", "amount": 0, "date": "1970-01-01", "tax": 0, "currency": "USD"}
+        """Deprecated — use AP Agent via Bill.com instead."""
+        logger.warning("extract_expense_details is deprecated. Use /finance/approvals endpoint.")
+        return {"vendor": "Unknown", "amount": 0, "date": "1970-01-01", "tax": 0, "currency": "USD"}
 
     def draft_reply(self, email_content, context=""):
         prompt = f"""

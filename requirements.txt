@@ -12,3 +12,5 @@ sqlalchemy
 python-dotenv
 beautifulsoup4
 google-generativeai
+requests
+python-multipart
